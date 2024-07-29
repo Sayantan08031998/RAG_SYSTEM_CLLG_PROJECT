@@ -26,37 +26,7 @@ Original file is located at
 !pip install -q transformers einops accelerate langchain bitsandbytes
 !pip install gradio
 
-# Check current disk usage
-!df -h
 
-# List files in the root directory
-!ls -lh /
-
-# List files in the /opt/bin/.nvidia directory
-!ls -lh /opt/bin/.nvidia
-
-# List files in the /content directory (where Colab typically stores user files)
-!ls -lh /content
-
-# Remove unnecessary files and directories (uncomment and modify as needed)
-# For example, if there are large files in /content, you can remove them:
-# !rm -rf /content/your-unnecessary-file-or-directory
-
-# Clear pip cache
-!rm -rf ~/.cache/pip
-
-# Clear apt cache
-!sudo apt-get clean
-
-# Clear temporary files in /tmp directory
-!rm -rf /tmp/*
-
-# Clear other unnecessary caches or temporary files (adjust paths as necessary)
-!rm -rf /root/.cache
-!rm -rf /var/lib/apt/lists/*
-
-# Check disk usage again to see the changes
-!df -h
 
 import os
 import warnings
@@ -73,58 +43,86 @@ warnings.filterwarnings('ignore')
 
 # Login to HuggingFace
 def login_huggingface(token):
-    login(token)
+    try:
+        login(token)
+    except Exception as e:
+        print(f"Error logging in to HuggingFace: {e}")
+        return None
 
 # Load data from the uploaded file
 def load_data(directory):
-    document = SimpleDirectoryReader(directory).load_data()
-    return document
+    try:
+        document = SimpleDirectoryReader(directory).load_data()
+        return document
+    except Exception as e:
+        print(f"Error loading data from {directory}: {e}")
+        return None
 
 # Initialize the LLM
 def initialize_llm(system_prompt, query_template, context_template):
-    query_wrapper_prompt = PromptTemplate(query_template)
-    context_template_prompt = PromptTemplate(context_template)
+    try:
+        query_wrapper_prompt = PromptTemplate(query_template)
+        context_template_prompt = PromptTemplate(context_template)
 
-    llm = HuggingFaceLLM(
-        context_window=4096,
-        max_new_tokens=256,
-        generate_kwargs={"temperature": 0.0, "do_sample": False},
-        system_prompt=system_prompt,
-        query_wrapper_prompt=query_wrapper_prompt,
-        tokenizer_name="meta-llama/Llama-2-7b-chat-hf",
-        model_name="meta-llama/Llama-2-7b-chat-hf",
-        device_map="auto",
-        model_kwargs={"torch_dtype": torch.float16, "load_in_8bit": True}
-    )
+        llm = HuggingFaceLLM(
+            context_window=4096,
+            max_new_tokens=256,
+            generate_kwargs={"temperature": 0.0, "do_sample": False},
+            system_prompt=system_prompt,
+            query_wrapper_prompt=query_wrapper_prompt,
+            tokenizer_name="meta-llama/Llama-2-7b-chat-hf",
+            model_name="meta-llama/Llama-2-7b-chat-hf",
+            device_map="auto",
+            model_kwargs={"torch_dtype": torch.float16, "load_in_8bit": True}
+        )
 
-    return llm
+        return llm
+    except Exception as e:
+        print(f"Error initializing LLM: {e}")
+        return None
 
 # Initialize the embedding model
 def initialize_embedding_model():
-    embed_model = LangchainEmbedding(
-        HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-    )
-    return embed_model
+    try:
+        embed_model = LangchainEmbedding(
+            HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+        )
+        return embed_model
+    except Exception as e:
+        print(f"Error initializing embedding model: {e}")
+        return None
 
 # Create service context
 def create_service_context(llm, embed_model, chunk_size=1024):
-    service_context = ServiceContext.from_defaults(
-        chunk_size=chunk_size,
-        llm=llm,
-        embed_model=embed_model
-    )
-    return service_context
+    try:
+        service_context = ServiceContext.from_defaults(
+            chunk_size=chunk_size,
+            llm=llm,
+            embed_model=embed_model
+        )
+        return service_context
+    except Exception as e:
+        print(f"Error creating service context: {e}")
+        return None
 
 # Create vector store index
 def create_vector_store_index(document, service_context):
-    index = VectorStoreIndex.from_documents(document, service_context=service_context, show_progress=True)
-    return index
+    try:
+        index = VectorStoreIndex.from_documents(document, service_context=service_context, show_progress=True)
+        return index
+    except Exception as e:
+        print(f"Error creating vector store index: {e}")
+        return None
 
 # Query the index
 def query_index(index, question):
-    query_engine = index.as_query_engine()
-    response = query_engine.query(question)
-    return response
+    try:
+        query_engine = index.as_query_engine()
+        response = query_engine.query(question)
+        return response
+    except Exception as e:
+        print(f"Error querying index: {e}")
+        return None
 
 # Main function to process the input document and query
 def process_input(file_path, question):
@@ -136,20 +134,32 @@ def process_input(file_path, question):
 
     # Pass the directory containing the file to load_data
     document = load_data(os.path.dirname(file_path))
+    if document is None:
+        return "Error: Unable to load document."
 
     system_prompt = 'You are a Q&A assistant. Your goal is to answer questions as accurately as possible based on the instructions and context provided.'
     query_template = "\n" + system_prompt + "</s>\n{query_str}</s>"
     context_template = "We have provided context information below. \n\n{context_str}\n\nGiven this information, please answer the question: {query_str}\n"
 
     llm = initialize_llm(system_prompt, query_template, context_template)
+    if llm is None:
+        return "Error: Unable to initialize the language model."
 
     embed_model = initialize_embedding_model()
+    if embed_model is None:
+        return "Error: Unable to initialize the embedding model."
 
     service_context = create_service_context(llm, embed_model)
+    if service_context is None:
+        return "Error: Unable to create service context."
 
     index = create_vector_store_index(document, service_context)
+    if index is None:
+        return "Error: Unable to create vector store index."
 
     response = query_index(index, question)
+    if response is None:
+        return "Error: Unable to get a response from the index."
 
     return response
 
@@ -170,4 +180,3 @@ def create_gradio_interface():
 if __name__ == "__main__":
     iface = create_gradio_interface()
     iface.launch(share=True, debug=True)
-
